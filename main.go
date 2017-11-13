@@ -175,7 +175,6 @@ func addSong(w http.ResponseWriter, r *http.Request) {
 	switch extension {
 	case ".mp3":
 		metaData = mp3.ParseTags(fd)
-		fmt.Printf("%v\n", metaData)
 		break
 	case ".flac":
 		// tag := flac.ParseTags(fd)
@@ -191,6 +190,18 @@ func addSong(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Println("Инфо. Метаданные получены")
+
+	flag, err := CheckExistMetaInDB(metaData)
+	if err != nil {
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	if flag {
+		log.Println("Инфо. Данный файл уже есть в системе")
+		http.Error(w, "Данный файл уже есть в системе", http.StatusBadRequest)
+		return
+	}
 
 	id := bson.NewObjectId()
 
@@ -214,8 +225,8 @@ func addSong(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Файл успешно добавлен"))
 }
 
-//saveFile - сохраняет копию обрабатываемой песни на диске под именем newFileName,
-//если все прошло успешно, то возвращает nil, в противном случае объект ошибки
+// saveFile - сохраняет копию обрабатываемой песни на диске под именем newFileName,
+// если все прошло успешно, то возвращает nil, в противном случае объект ошибки
 func saveFile(readSeeker io.ReadSeeker, newFileName string) error {
 	_, err := readSeeker.Seek(0, os.SEEK_SET)
 	if err != nil {
@@ -238,10 +249,33 @@ func saveFile(readSeeker io.ReadSeeker, newFileName string) error {
 	return nil
 }
 
-//removeFile - удаляет файл и обрабатывает возможные ошибки
+// removeFile - удаляет файл и обрабатывает возможные ошибки
 func removeFile(fileName string) {
 	err := os.Remove(fileName)
 	if err != nil {
 		log.Println("Ошибка. При удалении файла: " + err.Error())
 	}
+}
+
+// CheckExistMetaInDB - проверяет на существование в БД переданных метаданных
+// если такие данные есть, то возвращает true , инача false
+func CheckExistMetaInDB(mataData IMetadata) (bool, error) {
+	n, err := songsColl.Find(bson.M{"Title": mataData.GetTitle(),
+		"Artist":   mataData.GetArtist(),
+		"Genre":    mataData.GetGenre(),
+		"Bitrate":  mataData.GetBitrate(),
+		"Duration": mataData.GetDuration(),
+	}).Count()
+
+	fmt.Printf("%v", n)
+	if err != nil {
+		log.Println("Ошибка. При поиске записи в БД: " + err.Error())
+		return false, err
+	}
+
+	if n == 0 {
+		return false, nil
+	}
+
+	return true, nil
 }
