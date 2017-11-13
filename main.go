@@ -9,11 +9,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"reflect"
+	"time"
 
-	"./mp3"
-
-	"bitbucket.org/STEJLS/coursework/server/XMLconfig"
+	"github.com/STEJLS/AudioServer/XMLconfig"
+	"github.com/STEJLS/AudioServer/mp3"
 	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
@@ -31,8 +30,9 @@ var audioDBsession *mgo.Session
 var songsColl *mgo.Collection
 
 const (
-	formFileName     string = "file"     // имя файла в форме на сайте
-	storageDirectory string = "./music/" // место для хранения песен
+	formFileName            string = "file"     // имя файла в форме на сайте
+	storageDirectory        string = "./music/" // место для хранения песен
+	initialCountOfDownloads int64  = 0          // начальное  количесвто скачиваний
 )
 
 // InitFlags - инициализирует флаги командной строки
@@ -67,19 +67,20 @@ type IMetadata interface {
 
 // SongInfo - структура, описывающая информацию песни. Хранится в БД.
 type SongInfo struct {
-	KEK             bson.ObjectId `json:"id" bson:"_id,omitempty"`
-	FileName        string        // название песни
-	Title           string        // название песни
-	Artist          string        // исполнитель
-	Genre           string        // жанр
-	Bitrate         int           // килобит в секунду
-	Duration        int           // продолжительность песни в секундах
-	CountOfDownload uint64        // количество загрузок
-	Size            uint          // размер в байтах
+	ID              bson.ObjectId `json:"id" bson:"_id,omitempty"`                // ID записи в БД
+	FileName        string        `json:"FileName" bson:"FileName"`               // название песни
+	Title           string        `json:"Title" bson:"Title"`                     // название песни
+	Artist          string        `json:"Artist" bson:"Artist"`                   // исполнитель
+	Genre           string        `json:"Genre" bson:"Genre"`                     // жанр
+	Bitrate         int           `json:"Bitrate" bson:"Bitrate"`                 // килобит в секунду
+	Duration        int           `json:"Duration" bson:"Duration"`               // продолжительность песни в секундах
+	CountOfDownload int64         `json:"CountOfDownload" bson:"CountOfDownload"` // количество загрузок
+	Size            int           `json:"Size" bson:"Size"`                       // размер в байтах
+	UploadDate      time.Time     `json:"UploadDate" bson:"UploadDate"`           // дата загрузки
 }
 
 // NewSongInfo - конструктор для типа SongInfo на вход принимает id объекта БД, имя файла, размер файла и объект IMetadata
-func NewSongInfo(id bson.ObjectId, fileName string, filesize uint, metaData IMetadata) *SongInfo {
+func NewSongInfo(id bson.ObjectId, fileName string, filesize int, metaData IMetadata) *SongInfo {
 	return &SongInfo{id,
 		fileName,
 		metaData.GetTitle(),
@@ -87,8 +88,9 @@ func NewSongInfo(id bson.ObjectId, fileName string, filesize uint, metaData IMet
 		metaData.GetGenre(),
 		metaData.GetBitrate(),
 		metaData.GetDuration(),
-		0,
+		initialCountOfDownloads,
 		filesize,
+		time.Now().Add(time.Hour * time.Duration(3)), //+3 часа - мск
 	}
 }
 
@@ -119,9 +121,7 @@ func main() {
 	}
 
 	http.HandleFunc("/addSong", addSong)
-	http.HandleFunc("/flac", flac)
-	http.HandleFunc("/", index)
-	http.HandleFunc("/process", process)
+	http.HandleFunc("/addSongForm", addSongForm)
 
 	err := server.ListenAndServe()
 	if err != nil {
@@ -134,14 +134,14 @@ func main() {
 //////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////
 
-func index(w http.ResponseWriter, r *http.Request) {
+func addSongForm(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`<html>
 		<head>
 		<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 		<title>AudioServer</title>
 		</head>
 		<body>
-		<form action="http://localhost:9000/addSong" 
+		<form action="/addSong" 
 		method="post" enctype="multipart/form-data">
 		<input type="file" name="file">
 		<input type="submit"/>
@@ -152,19 +152,19 @@ func index(w http.ResponseWriter, r *http.Request) {
 }
 
 // addSong - добавляет песню в базу данных, копирует файл на диск в папку /music(имя песни - id записи из БД)
-// Если файл добавлен ответ - "Файл успешно добавлен"
-// Если не получилось извлечь файл из формы ответ - "Файл не найден"
-// Если тип файла не поддерижвается ответ - "Данный формат не поддерживается"
-// Если при создании копии на диске произошла ошибка ответ - "Неполадки на сервере, повторите попытку позже"
-// Если при записи метаданных в БД произошла ошибка ответ - "Неполадки на сервере, повторите попытку позже"
-// Если при генерации имени файла произошла ошибка ответ - "Неполадки на сервере, повторите попытку позже"
+// Если файл добавлен ответ - "Файл успешно добавлен" - 200
+// Если не получилось извлечь файл из формы ответ - "Файл не найден" - 400
+// Если добавляемый файл уже есть в системе - "Загружаемый файл уже есть в системе" - 400
+// Если тип файла не поддерижвается ответ - "Данный формат не поддерживается" - 415
+// Если при создании копии на диске произошла ошибка ответ - "Неполадки на сервере, повторите попытку позже" - 500
+// Если при записи метаданных в БД произошла ошибка ответ - "Неполадки на сервере, повторите попытку позже" - 500
 
 // сделать проверку на вставку одинковых файлов
 func addSong(w http.ResponseWriter, r *http.Request) {
 	fd, fh, err := r.FormFile(formFileName)
 	if err != nil {
 		log.Printf("Ошибка. Добавление песни не удалось. При поиске в форме файла с именем %q: %v\n", formFileName, err.Error())
-		w.Write([]byte("Файл не найден"))
+		http.Error(w, "Файл не найден", http.StatusBadRequest)
 		return
 	}
 	log.Printf("Инфо. Файл %v поступил на обработку\n", fh.Filename)
@@ -185,11 +185,9 @@ func addSong(w http.ResponseWriter, r *http.Request) {
 		break
 	}
 
-	fmt.Printf("%T\n", metaData)
-	if reflect.ValueOf(metaData).IsNil() {
-		// if metaData == nil {
+	if metaData == nil {
 		log.Println("Инфо. Данный формат не поддерживается: " + extension)
-		w.Write([]byte("Данный формат не поддерживается"))
+		http.Error(w, "Данный формат не поддерживается", http.StatusUnsupportedMediaType)
 		return
 	}
 	log.Println("Инфо. Метаданные получены")
@@ -198,16 +196,16 @@ func addSong(w http.ResponseWriter, r *http.Request) {
 
 	err = saveFile(fd, storageDirectory+id.Hex())
 	if err != nil {
-		w.Write([]byte("Неполадки на сервере, повторите попытку позже"))
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
 		return
 	}
 
-	infoToDB := NewSongInfo(id, fh.Filename, uint(fh.Size), metaData)
+	infoToDB := NewSongInfo(id, fh.Filename, int(fh.Size), metaData)
 	err = songsColl.Insert(infoToDB)
 	if err != nil {
 		log.Println("Ошибка. При добавлении записи в БД: " + err.Error())
 		removeFile(storageDirectory + id.Hex())
-		w.Write([]byte("Неполадки на сервере, повторите попытку позже"))
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
 		return
 	}
 
@@ -247,39 +245,3 @@ func removeFile(fileName string) {
 		log.Println("Ошибка. При удалении файла: " + err.Error())
 	}
 }
-
-func flac(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Опачки")
-	w.Header().Add("Content-Disposition", "filename=\"02 - Chameleon.flac\"")
-	http.ServeFile(w, r, "./02 - Chameleon.flac")
-	//http.Redirect(w, r, "http://2.92.77.228:9000/", 301)
-}
-
-func process(w http.ResponseWriter, r *http.Request) {
-	file, err := os.Open("2.mp3")
-	if err != nil {
-		log.Println(err.Error())
-	}
-
-	bb, err := ioutil.ReadAll(file)
-	//w.Header().Add("Content-Disposition", "attachment; filename=\"song.mp3\"")
-	w.Header().Add("Content-Disposition", "filename=\"02 - Chameleon.flac\"")
-	w.Header().Add("Content-Type", "audio/mpeg")
-	w.Write(bb)
-
-}
-
-// vasia := Cat{
-// 	Name: "Васька",
-// 	Kind: "Дворовый",
-// }
-
-// jsonContent, err := json.Marshal(vasia)
-// if err != nil {
-// 	fmt.Println(err.Error())
-// }
-
-// w.Write(jsonContent)
-
-//r.ParseForm()
-//fmt.Fprintln(w, r.Form)
