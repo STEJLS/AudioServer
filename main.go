@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -122,6 +123,7 @@ func main() {
 
 	http.HandleFunc("/addSong", addSong)
 	http.HandleFunc("/addSongForm", addSongForm)
+	http.HandleFunc("/getNewSongs", getNewSongs)
 
 	err := server.ListenAndServe()
 	if err != nil {
@@ -158,8 +160,6 @@ func addSongForm(w http.ResponseWriter, r *http.Request) {
 // Если тип файла не поддерижвается ответ - "Данный формат не поддерживается" - 415
 // Если при создании копии на диске произошла ошибка ответ - "Неполадки на сервере, повторите попытку позже" - 500
 // Если при записи метаданных в БД произошла ошибка ответ - "Неполадки на сервере, повторите попытку позже" - 500
-
-// сделать проверку на вставку одинковых файлов
 func addSong(w http.ResponseWriter, r *http.Request) {
 	fd, fh, err := r.FormFile(formFileName)
 	if err != nil {
@@ -278,4 +278,32 @@ func CheckExistMetaInDB(mataData IMetadata) (bool, error) {
 	}
 
 	return true, nil
+}
+
+//getNewSongs - отдает 15 последних добвленных песен в формате json
+func getNewSongs(w http.ResponseWriter, r *http.Request) {
+	log.Println("Инфо. Началось выполнение запроса на отдачу новинок")
+	var result []SongInfo
+	err := songsColl.Find(nil).Sort("-UploadDate").Limit(15).All(&result)
+	if err != nil {
+		log.Println("Ошибка. При поиске новинок в БД: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	if len(result) == 0 {
+		return
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		log.Println("Ошибка. При маршалинге в json новинок: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Add("Content-type", "application/json;")
+	w.Write(data)
+
+	log.Println("Инфо. Закончилось успешно выполнение запроса на отдачу новинок")
 }
