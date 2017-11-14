@@ -381,4 +381,9 @@ func getSong(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Println("Инфо. Закончилось выполнение запроса на отдачу файла")
+
+	err = songsColl.UpdateId(bson.ObjectIdHex(id), bson.M{"$set": bson.M{"CountOfDownload": result.CountOfDownload + 1}})
+	if err != nil {
+		log.Println("Ошибка. При обновлении записи(" + id + ") - увеличивалось кол-во скачаваний: " + err.Error())
+	}
 }
