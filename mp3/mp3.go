@@ -128,19 +128,18 @@ func getDurationAndBitRate(readSeeker io.ReadSeeker, file *MP3meta) error {
 		duration += mp3header.Duration
 		_, err := readSeeker.Seek(mp3header.Size-4, os.SEEK_CUR)
 		if err != nil {
-			fmt.Println("При переходе на следующий фрейм MP3" + err.Error())
+			log.Println("При переходе на следующий фрейм MP3" + err.Error())
 			break
 		}
 		_, err = readSeeker.Read(data)
 		if err != nil {
-			fmt.Println("При чтении следующего заголовка фрейма MP3" + err.Error())
+			log.Println("При чтении следующего заголовка фрейма MP3" + err.Error())
 			break
 		}
 		count++
 		bitRate += uint64(mp3header.Bitrate / 1000)
 	}
 
-	fmt.Println(duration.String())
 	file.Duration = round(duration.Seconds())
 	file.Bitrate = int(bitRate / count)
 

@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -123,7 +124,9 @@ func main() {
 
 	http.HandleFunc("/addSong", addSong)
 	http.HandleFunc("/addSongForm", addSongForm)
-	http.HandleFunc("/getNewSongs", getNewSongs)
+	http.HandleFunc("/getMetadataOfNewSongs", getMetadataOfNewSongs)
+	http.HandleFunc("/getSong", getSong)
+	http.HandleFunc("/getSongForm", getSongForm)
 
 	err := server.ListenAndServe()
 	if err != nil {
@@ -146,6 +149,23 @@ func addSongForm(w http.ResponseWriter, r *http.Request) {
 		<form action="/addSong" 
 		method="post" enctype="multipart/form-data">
 		<input type="file" name="file">
+		<input type="submit"/>
+		</form>
+		</body>
+		</html>`),
+	)
+}
+
+func getSongForm(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte(`<html>
+		<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+		<title>AudioServer</title>
+		</head>
+		<body>
+		<form action="/getSong" 
+		method="post" enctype="application/x-www-form-urlencoded">
+		<input type="text" name="id">
 		<input type="submit"/>
 		</form>
 		</body>
@@ -267,7 +287,6 @@ func CheckExistMetaInDB(mataData IMetadata) (bool, error) {
 		"Duration": mataData.GetDuration(),
 	}).Count()
 
-	fmt.Printf("%v", n)
 	if err != nil {
 		log.Println("Ошибка. При поиске записи в БД: " + err.Error())
 		return false, err
@@ -280,8 +299,8 @@ func CheckExistMetaInDB(mataData IMetadata) (bool, error) {
 	return true, nil
 }
 
-//getNewSongs - отдает 15 последних добвленных песен в формате json
-func getNewSongs(w http.ResponseWriter, r *http.Request) {
+//getMetadataOfNewSongs - отдает методанные о 15 последних добвленных песен в формате json
+func getMetadataOfNewSongs(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на отдачу новинок")
 	var result []SongInfo
 	err := songsColl.Find(nil).Sort("-UploadDate").Limit(15).All(&result)
@@ -303,7 +322,63 @@ func getNewSongs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Add("Content-type", "application/json;")
-	w.Write(data)
+	_, err = w.Write(data)
+	if err != nil {
+		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+	}
 
 	log.Println("Инфо. Закончилось успешно выполнение запроса на отдачу новинок")
+}
+
+// getSong - отдает песню по запрошенному ID
+// Возможные http статусы: 200, 400, 500
+func getSong(w http.ResponseWriter, r *http.Request) {
+	log.Println("Инфо. Началось выполнение запроса на отдачу файла")
+
+	id := r.FormValue("id")
+	if id == "" {
+		log.Println("Ошибка. ID не найден")
+		http.Error(w, "ID не найден", http.StatusBadRequest)
+		return
+	}
+
+	if !bson.IsObjectIdHex(id) {
+		log.Println("Ошибка. Полученное значение не является ID: " + id)
+		http.Error(w, "Полученное значение не является ID", http.StatusBadRequest)
+		return
+	}
+
+	var result SongInfo
+
+	err := songsColl.FindId(bson.ObjectIdHex(id)).One(&result)
+	if err != nil {
+		if err.Error() == "not found" {
+			log.Println("Инфо. Запращиваемой песни нет в БД: " + err.Error())
+			http.Error(w, "С полученным ID в БД не существует записи", http.StatusBadRequest)
+			return
+		}
+
+		log.Println("Ошибка. При поиске записи в БД: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	data, err := ioutil.ReadFile(storageDirectory + id)
+	if err != nil {
+		log.Println("Ошибка. При чтении файла(" + id + ") с диска :" + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+	}
+
+	w.Header().Add("Content-Disposition", "attachment; filename=\""+result.FileName+"\"")
+	w.Header().Add("Content-Type", mime.TypeByExtension(filepath.Ext(result.FileName)))
+	w.Header().Add("Content-Length", fmt.Sprintf("%v", len(data)))
+
+	_, err = w.Write(data)
+	if err != nil {
+		log.Println("Ошибка. При отдачи файла(" + id + "): " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+	}
+
+	log.Println("Инфо. Закончилось выполнение запроса на отдачу файла")
 }
