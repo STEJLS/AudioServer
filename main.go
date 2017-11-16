@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/STEJLS/AudioServer/XMLconfig"
@@ -32,9 +33,10 @@ var audioDBsession *mgo.Session
 var songsColl *mgo.Collection
 
 const (
-	formFileName            string = "file"     // имя файла в форме на сайте
-	storageDirectory        string = "./music/" // место для хранения песен
-	initialCountOfDownloads int64  = 0          // начальное  количесвто скачиваний
+	formFileName                  string = "file"     // имя файла в форме на сайте
+	storageDirectory              string = "./music/" // место для хранения песен
+	initialCountOfDownloads       int64  = 0          // начальное  количесвто скачиваний
+	defaultCountMatadataForUpload int    = 25         // кол-во по умолчанию сколько метаданных будет отдаваться
 )
 
 // InitFlags - инициализирует флаги командной строки
@@ -119,14 +121,15 @@ func main() {
 
 	server := http.Server{
 		Addr: fmt.Sprintf(":%v", config.HTTP.Port),
-		//Addr: fmt.Sprintf("%v:%v", config.HTTP.Host, config.HTTP.Port),
 	}
 
 	http.HandleFunc("/addSong", addSong)
-	http.HandleFunc("/addSongForm", addSongForm)
-	http.HandleFunc("/getMetadataOfNewSongs", getMetadataOfNewSongs)
 	http.HandleFunc("/getSong", getSong)
+	http.HandleFunc("/getMetadataOfNewSongs", getMetadataOfNewSongs)
+	http.HandleFunc("/getMetadataOfPopularSongs", getMetadataOfPopularSongs)
+	http.HandleFunc("/addSongForm", addSongForm)
 	http.HandleFunc("/getSongForm", getSongForm)
+	http.HandleFunc("/getPopularSongsForm", getPopularSongsForm)
 
 	err := server.ListenAndServe()
 	if err != nil {
@@ -166,6 +169,23 @@ func getSongForm(w http.ResponseWriter, r *http.Request) {
 		<form action="/getSong" 
 		method="post" enctype="application/x-www-form-urlencoded">
 		<input type="text" name="id">
+		<input type="submit"/>
+		</form>
+		</body>
+		</html>`),
+	)
+}
+
+func getPopularSongsForm(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte(`<html>
+		<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+		<title>AudioServer</title>
+		</head>
+		<body>
+		<form action="/getMetadataOfPopularSongs" 
+		method="post" enctype="application/x-www-form-urlencoded">
+		<input type="text" name="count">
 		<input type="submit"/>
 		</form>
 		</body>
@@ -241,8 +261,6 @@ func addSong(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Add("Access-Control-Allow-Origin", "*")
-	w.Header().Add("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
-	w.Header().Add("Access-Control-Allow-Headers", "Accept, Content-Type")
 	log.Printf("Инфо. файл %v добавлен в систему\n", fh.Filename)
 
 	w.Write([]byte("Файл успешно добавлен"))
@@ -302,40 +320,6 @@ func CheckExistMetaInDB(mataData IMetadata) (bool, error) {
 	return true, nil
 }
 
-//getMetadataOfNewSongs - отдает методанные о 15 последних добвленных песен в формате json
-func getMetadataOfNewSongs(w http.ResponseWriter, r *http.Request) {
-	log.Println("Инфо. Началось выполнение запроса на отдачу новинок")
-	var result []SongInfo
-	err := songsColl.Find(nil).Sort("-UploadDate").Limit(15).All(&result)
-	if err != nil {
-		log.Println("Ошибка. При поиске новинок в БД: " + err.Error())
-		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
-		return
-	}
-
-	if len(result) == 0 {
-		return
-	}
-
-	data, err := json.Marshal(result)
-	if err != nil {
-		log.Println("Ошибка. При маршалинге в json новинок: " + err.Error())
-		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Add("Access-Control-Allow-Origin", "*")
-	w.Header().Add("Content-type", "application/json;")
-
-	_, err = w.Write(data)
-	if err != nil {
-		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
-		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
-	}
-
-	log.Println("Инфо. Закончилось успешно выполнение запроса на отдачу новинок")
-}
-
 // getSong - отдает песню по запрошенному ID
 // Возможные http статусы: 200, 400, 500
 func getSong(w http.ResponseWriter, r *http.Request) {
@@ -392,4 +376,100 @@ func getSong(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Ошибка. При обновлении записи(" + id + ") - увеличивалось кол-во скачаваний: " + err.Error())
 	}
+}
+
+// getCountOfMetadata - пытается извлечь переменную с именем count и возвращает его если оно корректно,
+// в противном случае возвращается значение по умолчанию
+func getCountOfMetadata(r *http.Request) int {
+	var count int
+
+	strCount := r.FormValue("count")
+
+	if strCount == "" {
+		log.Printf("Инфо. Количетсво запрашиваемых записей не указано, отдаю стандартное кол-во: %v", defaultCountMatadataForUpload)
+		count = defaultCountMatadataForUpload
+	} else {
+		var err error
+		count, err = strconv.Atoi(strCount)
+
+		if err != nil {
+			log.Println("Ошибка. Не получилось преобрахзовать введенное кол-во в число: " + err.Error())
+			count = defaultCountMatadataForUpload
+		}
+	}
+
+	return count
+}
+
+//getMetadataOfPopularSongs - отдает методанные о популярных песнях в формате json
+func getMetadataOfPopularSongs(w http.ResponseWriter, r *http.Request) {
+	log.Println("Инфо. Началось выполнение запроса на отдачу популярных песен")
+
+	count := getCountOfMetadata(r)
+
+	var result []SongInfo
+	err := songsColl.Find(nil).Sort("-CountOfDownload").Limit(count).All(&result)
+	if err != nil {
+		log.Println("Ошибка. При поиске популярных песен в БД: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	if len(result) == 0 {
+		return
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		log.Println("Ошибка. При маршалинге в json популярных песен: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Add("Content-type", "application/json;")
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	_, err = w.Write(data)
+	if err != nil {
+		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+	}
+
+	log.Println("Инфо. Закончилось успешно выполнение запроса на отдачу популярных песен")
+}
+
+//getMetadataOfNewSongs - отдает методанные о 15 последних добвленных песен в формате json
+func getMetadataOfNewSongs(w http.ResponseWriter, r *http.Request) {
+	log.Println("Инфо. Началось выполнение запроса на отдачу новинок")
+
+	count := getCountOfMetadata(r)
+
+	var result []SongInfo
+	err := songsColl.Find(nil).Sort("-UploadDate").Limit(count).All(&result)
+	if err != nil {
+		log.Println("Ошибка. При поиске новинок в БД: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	if len(result) == 0 {
+		return
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		log.Println("Ошибка. При маршалинге в json новинок: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add("Content-type", "application/json;")
+
+	_, err = w.Write(data)
+	if err != nil {
+		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+	}
+
+	log.Println("Инфо. Закончилось успешно выполнение запроса на отдачу новинок")
 }
