@@ -240,6 +240,9 @@ func addSong(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+	w.Header().Add("Access-Control-Allow-Headers", "Accept, Content-Type")
 	log.Printf("Инфо. файл %v добавлен в систему\n", fh.Filename)
 
 	w.Write([]byte("Файл успешно добавлен"))
@@ -321,7 +324,9 @@ func getMetadataOfNewSongs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Add("Access-Control-Allow-Origin", "*")
 	w.Header().Add("Content-type", "application/json;")
+
 	_, err = w.Write(data)
 	if err != nil {
 		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
@@ -370,8 +375,9 @@ func getSong(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
 	}
 
-	w.Header().Add("Content-Disposition", "attachment; filename=\""+result.FileName+"\"")
+	w.Header().Add("Content-Disposition", "filename=\""+result.FileName+"\"")
 	w.Header().Add("Content-Type", mime.TypeByExtension(filepath.Ext(result.FileName)))
+	w.Header().Add("Accept-Ranges", "bytes")
 	w.Header().Add("Content-Length", fmt.Sprintf("%v", len(data)))
 
 	_, err = w.Write(data)
