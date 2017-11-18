@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/STEJLS/AudioServer/XMLconfig"
@@ -33,10 +35,10 @@ var audioDBsession *mgo.Session
 var songsColl *mgo.Collection
 
 const (
-	formFileName                  string = "file"     // имя файла в форме на сайте
-	storageDirectory              string = "./music/" // место для хранения песен
-	initialCountOfDownloads       int64  = 0          // начальное  количесвто скачиваний
-	defaultCountMatadataForUpload int    = 25         // кол-во по умолчанию сколько метаданных будет отдаваться
+	formFileName                  string = "file"      // имя файла в форме на сайте
+	storageDirectory              string = "../music/" // место для хранения песен
+	initialCountOfDownloads       int64  = 0           // начальное  количесвто скачиваний
+	defaultCountMatadataForUpload int    = 25          // кол-во по умолчанию сколько метаданных будет отдаваться
 )
 
 // InitFlags - инициализирует флаги командной строки
@@ -127,6 +129,7 @@ func main() {
 	http.HandleFunc("/getSong", getSong)
 	http.HandleFunc("/getMetadataOfNewSongs", getMetadataOfNewSongs)
 	http.HandleFunc("/getMetadataOfPopularSongs", getMetadataOfPopularSongs)
+	http.HandleFunc("/searchSongs", searchSongs)
 	http.HandleFunc("/addSongForm", addSongForm)
 	http.HandleFunc("/getSongForm", getSongForm)
 	http.HandleFunc("/getPopularSongsForm", getPopularSongsForm)
@@ -437,7 +440,7 @@ func getMetadataOfPopularSongs(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Закончилось успешно выполнение запроса на отдачу популярных песен")
 }
 
-//getMetadataOfNewSongs - отдает методанные о 15 последних добвленных песен в формате json
+// getMetadataOfNewSongs - отдает методанные о 15 последних добвленных песен в формате json
 func getMetadataOfNewSongs(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на отдачу новинок")
 
@@ -472,4 +475,54 @@ func getMetadataOfNewSongs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Println("Инфо. Закончилось успешно выполнение запроса на отдачу новинок")
+}
+
+// searchSongs - осуществляет поиск песен в базе данных и возвращает метаданные в json
+// При вводе пустой строки ответ 400  статус.
+// Если по введенной строке ничего не найдено, то возвращается пустота и 200 статус.
+func searchSongs(w http.ResponseWriter, r *http.Request) {
+	log.Println("Инфо. Началось выполнение запроса на поиск песен")
+
+	stringForSearch := r.FormValue("searchString")
+	if stringForSearch == "" {
+		log.Printf("Инфо. На поиск поcтупила некорректная строка")
+		http.Error(w, "Полученная строка не может использоваться для поиска", http.StatusBadRequest)
+		return
+	}
+
+	stringForSearch = strings.Join(strings.Fields(regexp.QuoteMeta(stringForSearch)), " ")
+	log.Printf("Инфо. Поиск по строке: " + stringForSearch)
+
+	var result []SongInfo
+
+	err := songsColl.Find(bson.M{"$or": []bson.M{bson.M{"Artist": bson.RegEx{stringForSearch, "i"}},
+		bson.M{"Genre": bson.RegEx{stringForSearch, "i"}},
+		bson.M{"Title": bson.RegEx{stringForSearch, "i"}}}}).All(&result)
+	if err != nil {
+		log.Println("Ошибка. При поиске в БД: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	if len(result) == 0 {
+		return
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		log.Println("Ошибка. При маршалинге в json результата поиска: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add("Content-type", "application/json;")
+
+	_, err = w.Write(data)
+	if err != nil {
+		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+	}
+
+	log.Println("Инфо. Закончилось успешно выполнение запроса поиск песен")
 }
