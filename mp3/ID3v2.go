@@ -69,7 +69,6 @@ func getID3v2Tags(readSeeker io.ReadSeeker, file *MP3meta) {
 		default:
 			if file.idv3v2size != 0 {
 				file.idv3v2tag = true
-				tryConvertToNewGenre(&file.Genre)
 			}
 			return
 		}
@@ -93,11 +92,6 @@ func getID3v2Tags(readSeeker io.ReadSeeker, file *MP3meta) {
 
 		readSeeker.Read(data)
 	} //конец чтения тэгов
-
-	if file.idv3v2size != 0 {
-		file.idv3v2tag = true
-		tryConvertToNewGenre(&file.Genre)
-	}
 }
 
 //-1 признак того что не найден заголовок

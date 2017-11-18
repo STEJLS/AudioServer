@@ -75,6 +75,8 @@ func ParseTags(readSeeker io.ReadSeeker) *MP3meta {
 		return nil
 	}
 
+	tryConvertToNewGenre(&file.Genre)
+
 	return file
 }
 
@@ -171,13 +173,18 @@ func searchOffsetForFirstMP3FrameHeader(readSeeker io.ReadSeeker, distance int) 
 // в жанр в виде строки,
 // где NN номер жанра первой версии.
 func tryConvertToNewGenre(ganre *string) {
-	index := 0
-	_, err := fmt.Sscanf(*ganre, "(%d)", &index)
-	if err == nil {
-		if index >= 0 && index < len(id3v1Genres) {
-			*ganre = id3v1Genres[index]
+	if *ganre != "" {
+		index := 0
+		_, err := fmt.Sscanf(*ganre, "(%d)", &index)
+		if err == nil {
+			if index >= 0 && index < len(id3v1Genres) {
+				*ganre = id3v1Genres[index]
+			}
 		}
+	} else {
+		*ganre = "Other"
 	}
+
 }
 
 //VBR - variable bit rate
