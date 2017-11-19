@@ -41,6 +41,6 @@ func NewSongInfo(id bson.ObjectId, fileName string, filesize int, metaData IMeta
 		metaData.GetDuration(),
 		initialCountOfDownloads,
 		filesize,
-		time.Now().Add(time.Hour * time.Duration(3)), //+3 часа - мск
+		time.Now().UTC(),
 	}
 }
