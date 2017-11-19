@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -356,22 +355,8 @@ func getSong(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := ioutil.ReadFile(storageDirectory + id)
-	if err != nil {
-		log.Println("Ошибка. При чтении файла(" + id + ") с диска :" + err.Error())
-		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
-	}
-
 	w.Header().Add("Content-Disposition", "filename=\""+result.FileName+"\"")
-	w.Header().Add("Content-Type", mime.TypeByExtension(filepath.Ext(result.FileName)))
-	w.Header().Add("Accept-Ranges", "bytes")
-	w.Header().Add("Content-Length", fmt.Sprintf("%v", len(data)))
-
-	_, err = w.Write(data)
-	if err != nil {
-		log.Println("Ошибка. При отдачи файла(" + id + "): " + err.Error())
-		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
-	}
+	http.ServeFile(w, r, storageDirectory+id)
 
 	log.Println("Инфо. Закончилось выполнение запроса на отдачу файла")
 
