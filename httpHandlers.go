@@ -165,7 +165,7 @@ func getMetadataOfPopularSongs(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Закончилось успешно выполнение запроса на отдачу популярных песен")
 }
 
-// getMetadataOfNewSongs - отдает методанные о 15 последних добвленных песен в формате json
+// getMetadataOfNewSongs - отдает методанные о последних добвленных песен в формате json
 func getMetadataOfNewSongs(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на отдачу новинок")
 
@@ -252,6 +252,7 @@ func searchSongs(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Закончилось успешно выполнение запроса поиск песен")
 }
 
+// addPlayList - добавляет плэйлист в систему
 func addPlayList(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на добавление плэйлиста")
 
@@ -283,4 +284,41 @@ func addPlayList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Println("Инфо. Закончилось успешно выполнение запроса на добавление плэйлиста")
+}
+
+// getPlaylists - отдает методанные о плэйлистах в формате json
+func getPlaylists(w http.ResponseWriter, r *http.Request) {
+	log.Println("Инфо. Началось выполнение запроса на отдачу плэйлистов")
+
+	count := getCountOfMetadata(r)
+
+	var result []PlayList
+	err := playListsColl.Find(nil).Limit(count).All(&result)
+	if err != nil {
+		log.Println("Ошибка. При поиске плэйлистов в БД: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	if len(result) == 0 {
+		return
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		log.Println("Ошибка. При маршалинге в json плэйлистов: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add("Content-type", "application/json;")
+
+	_, err = w.Write(data)
+	if err != nil {
+		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+	}
+
+	log.Println("Инфо. Закончилось успешно выполнение запроса на отдачу плэйлистов")
 }
