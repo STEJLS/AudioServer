@@ -251,3 +251,36 @@ func searchSongs(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("Инфо. Закончилось успешно выполнение запроса поиск песен")
 }
+
+func addPlayList(w http.ResponseWriter, r *http.Request) {
+	log.Println("Инфо. Началось выполнение запроса на добавление плэйлиста")
+
+	jsonIDs := r.FormValue("ids")
+	name := r.FormValue("name")
+	if jsonIDs == " " || name == "" {
+		log.Printf("Инфо. На добавление в плэйлист поступили некоректные данные")
+		http.Error(w, "Введены неверные данные", http.StatusBadRequest)
+		return
+	}
+
+	var ids []string
+	err := json.Unmarshal([]byte(jsonIDs), &ids)
+	if err != nil {
+		log.Println("Ошибка. При анмаршалинге json: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+	}
+
+	playList := PlayList{
+		Name: name,
+		IDs:  ids,
+	}
+
+	err = playListsColl.Insert(playList)
+	if err != nil {
+		log.Println("Ошибка. При добавлении записи в БД: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	log.Println("Инфо. Закончилось успешно выполнение запроса на добавление плэйлиста")
+}

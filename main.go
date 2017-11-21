@@ -23,6 +23,7 @@ func main() {
 	}
 
 	http.HandleFunc("/addSong", addSong)
+	http.HandleFunc("/addPlayList", addPlayList)
 	http.HandleFunc("/getSong", getSong)
 	http.HandleFunc("/getMetadataOfNewSongs", getMetadataOfNewSongs)
 	http.HandleFunc("/getMetadataOfPopularSongs", getMetadataOfPopularSongs)

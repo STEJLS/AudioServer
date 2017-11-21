@@ -44,3 +44,9 @@ func NewSongInfo(id bson.ObjectId, fileName string, filesize int, metaData IMeta
 		time.Now().UTC(),
 	}
 }
+
+type PlayList struct {
+	ID   bson.ObjectId `json:"id" bson:"_id,omitempty"` // ID записи в БД
+	Name string        `json:"name" bson:"name"`        // название плэй листа
+	IDs  []string      `json:"ids" bson:"ids"`          // список id песен
+}

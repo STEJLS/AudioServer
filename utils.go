@@ -42,6 +42,8 @@ func connectToDB(host string, port int, DBName string) {
 		log.Fatalln(fmt.Sprintf("Фатал. При подключении к серверу БД(%v:%v): ", host, port) + err.Error())
 	}
 	songsColl = audioDBsession.DB(DBName).C("Songs")
+	playListsColl = audioDBsession.DB(DBName).C("PlayLists")
+
 	log.Printf("Инфо. Подключение к базе данных установлено.")
 }
 

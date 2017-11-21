@@ -14,9 +14,12 @@ var audioDBsession *mgo.Session
 // SongsColl - это указатель на подключение к коллекции Songs базы данных Audio
 var songsColl *mgo.Collection
 
+// playListsColl - это указатель на подключение к коллекции PlayLists базы данных Audio
+var playListsColl *mgo.Collection
+
 const (
 	formFileName                  string = "file"      // имя файла в форме на сайте
 	storageDirectory              string = "../music/" // место для хранения песен
 	initialCountOfDownloads       int64  = 0           // начальное  количесвто скачиваний
-	defaultCountMatadataForUpload int    = 25          // кол-во по умолчанию сколько метаданных будет отдаваться
+	defaultCountMatadataForUpload int    = 50          // кол-во по умолчанию сколько метаданных будет отдаваться
 )
