@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
@@ -122,4 +123,15 @@ func getCountOfMetadata(r *http.Request) int {
 	}
 
 	return count
+}
+
+// tryParseTitleAndArtistFromFileName - пытается из имени файла получить исполнителя
+// и название песни. Разделение идет по символу"-"
+func tryParseTitleAndArtistFromFileName(song *SongInfo, ext string) {
+	fileNameWithoutExt := strings.TrimSuffix(song.FileName, ext)
+	n := strings.Index(fileNameWithoutExt, "-")
+	if n != -1 {
+		song.Artist = strings.TrimSpace(fileNameWithoutExt[0:n])
+		song.Title = strings.TrimSpace(fileNameWithoutExt[n+1 : len(fileNameWithoutExt)])
+	}
 }

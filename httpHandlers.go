@@ -24,6 +24,10 @@ import (
 // Если при создании копии на диске произошла ошибка ответ - "Неполадки на сервере, повторите попытку позже" - 500
 // Если при записи метаданных в БД произошла ошибка ответ - "Неполадки на сервере, повторите попытку позже" - 500
 func addSong(w http.ResponseWriter, r *http.Request) {
+	log.Println("Инфо. Началось выполнение запроса на добавлене файла")
+
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add("Content-type", "text/html;charset=utf-8")
 	fd, fh, err := r.FormFile(formFileName)
 	if err != nil {
 		log.Printf("Ошибка. Добавление песни не удалось. При поиске в форме файла с именем %q: %v\n", formFileName, err.Error())
@@ -75,6 +79,11 @@ func addSong(w http.ResponseWriter, r *http.Request) {
 	}
 
 	infoToDB := NewSongInfo(id, fh.Filename, int(fh.Size), metaData)
+	
+	if infoToDB.Artist == "" && infoToDB.Title == "" {
+		tryParseTitleAndArtistFromFileName(infoToDB, extension)
+	}
+
 	err = songsColl.Insert(infoToDB)
 	if err != nil {
 		log.Println("Ошибка. При добавлении записи в БД: " + err.Error())
@@ -83,10 +92,15 @@ func addSong(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Add("Access-Control-Allow-Origin", "*")
 	log.Printf("Инфо. файл %v добавлен в систему\n", fh.Filename)
 
-	w.Write([]byte("Файл успешно добавлен"))
+	_, err = w.Write([]byte("Файл успешно добавлен"))
+	if err != nil {
+		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+	}
+
+	log.Println("Инфо. Закончилось выполнение запроса на отдачу файла")
 }
 
 // getSong - отдает песню по запрошенному ID
@@ -137,6 +151,9 @@ func getSong(w http.ResponseWriter, r *http.Request) {
 func getMetadataOfPopularSongs(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на отдачу популярных песен")
 
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add("Content-type", "application/json;")
+
 	count := getCountOfMetadata(r)
 
 	var result []SongInfo
@@ -158,8 +175,6 @@ func getMetadataOfPopularSongs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Add("Content-type", "application/json;")
-	w.Header().Add("Access-Control-Allow-Origin", "*")
 	_, err = w.Write(data)
 	if err != nil {
 		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
@@ -172,6 +187,9 @@ func getMetadataOfPopularSongs(w http.ResponseWriter, r *http.Request) {
 // getMetadataOfNewSongs - отдает методанные о последних добвленных песен в формате json
 func getMetadataOfNewSongs(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на отдачу новинок")
+
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add("Content-type", "application/json;")
 
 	count := getCountOfMetadata(r)
 
@@ -194,9 +212,6 @@ func getMetadataOfNewSongs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Add("Access-Control-Allow-Origin", "*")
-	w.Header().Add("Content-type", "application/json;")
-
 	_, err = w.Write(data)
 	if err != nil {
 		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
@@ -211,6 +226,9 @@ func getMetadataOfNewSongs(w http.ResponseWriter, r *http.Request) {
 // Если по введенной строке ничего не найдено, то возвращается пустота и 200 статус.
 func searchSongs(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на поиск песен")
+
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add("Content-type", "application/json;")
 
 	stringForSearch := r.FormValue("searchString")
 	if stringForSearch == "" {
@@ -244,9 +262,6 @@ func searchSongs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Add("Access-Control-Allow-Origin", "*")
-	w.Header().Add("Content-type", "application/json;")
-
 	_, err = w.Write(data)
 	if err != nil {
 		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
@@ -259,6 +274,9 @@ func searchSongs(w http.ResponseWriter, r *http.Request) {
 // addPlayList - добавляет плэйлист в систему
 func addPlaylist(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на добавление плэйлиста")
+
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add("Content-type", "text/html;charset=utf-8")
 
 	jsonIDs := r.FormValue("ids")
 	name := r.FormValue("name")
@@ -294,6 +312,9 @@ func addPlaylist(w http.ResponseWriter, r *http.Request) {
 func getPlaylists(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на отдачу плэйлистов")
 
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add("Content-type", "application/json;")
+
 	count := getCountOfMetadata(r)
 
 	var result []PlayList
@@ -315,9 +336,6 @@ func getPlaylists(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Add("Access-Control-Allow-Origin", "*")
-	w.Header().Add("Content-type", "application/json;")
-
 	_, err = w.Write(data)
 	if err != nil {
 		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
@@ -332,6 +350,9 @@ func getPlaylists(w http.ResponseWriter, r *http.Request) {
 // Если по введенной строке ничего не найдено, то возвращается пустота и 200 статус.
 func searchPlaylists(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на поиск плейлистов")
+
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add("Content-type", "application/json;")
 
 	stringForSearch := r.FormValue("searchString")
 	if stringForSearch == "" {
@@ -362,9 +383,6 @@ func searchPlaylists(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
 		return
 	}
-
-	w.Header().Add("Access-Control-Allow-Origin", "*")
-	w.Header().Add("Content-type", "application/json;")
 
 	_, err = w.Write(data)
 	if err != nil {
