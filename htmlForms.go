@@ -70,3 +70,20 @@ func addPlaylistForm(w http.ResponseWriter, r *http.Request) {
 		</html>`),
 	)
 }
+
+func searchPlaylistsForm(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte(`<html>
+		<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+		<title>Go Web Programming</title>
+		</head>
+		<body>
+		<form action="./searchPlaylists" 
+		method="post">
+		<input type="text" name="searchString">
+		<input type="submit"/>
+		</form>
+		</body>
+		</html>`),
+	)
+}
