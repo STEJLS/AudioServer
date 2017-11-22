@@ -52,3 +52,21 @@ func getPopularSongsForm(w http.ResponseWriter, r *http.Request) {
 		</html>`),
 	)
 }
+
+func addPlaylistForm(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte(`<html>
+		<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+		<title>Go Web Programming</title>
+		</head>
+		<body>
+		<form action="./addPlaylist" 
+		method="post">
+		<input type="text" name="ids">
+		<input type="text" name="name">
+		<input type="submit"/>
+		</form>
+		</body>
+		</html>`),
+	)
+}

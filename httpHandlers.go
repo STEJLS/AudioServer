@@ -1,7 +1,11 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -108,7 +112,7 @@ func getSong(w http.ResponseWriter, r *http.Request) {
 	err := songsColl.FindId(bson.ObjectIdHex(id)).One(&result)
 	if err != nil {
 		if err.Error() == "not found" {
-			log.Println("Инфо. Запращиваемой песни нет в БД: " + err.Error())
+			log.Println("Инфо. Запрашиваемой песни нет в БД: " + err.Error())
 			http.Error(w, "С полученным ID в БД не существует записи", http.StatusBadRequest)
 			return
 		}
@@ -253,7 +257,7 @@ func searchSongs(w http.ResponseWriter, r *http.Request) {
 }
 
 // addPlayList - добавляет плэйлист в систему
-func addPlayList(w http.ResponseWriter, r *http.Request) {
+func addPlaylist(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на добавление плэйлиста")
 
 	jsonIDs := r.FormValue("ids")
@@ -369,4 +373,72 @@ func searchPlaylists(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Println("Инфо. Закончилось успешно выполнение запроса на поиск плейлистов")
+}
+
+// getPlaylistInZip - создает zip архив, который содержит в себе песни указанного плэйлиста
+func getPlaylistInZip(w http.ResponseWriter, r *http.Request) {
+	log.Println("Инфо. Началось выполнение запроса на отдачу плэйлистов в zip")
+
+	id := r.FormValue("id")
+	if id == "" {
+		log.Printf(fmt.Sprintf("Инфо. На выход посутпил некорректный id(%v)", id))
+		http.Error(w, "Полученненный не ID, а пустая строка", http.StatusBadRequest)
+		return
+	}
+
+	var playList PlayList
+	err := playListsColl.FindId(bson.ObjectIdHex(id)).One(&playList)
+	if err != nil {
+		if err.Error() == "not found" {
+			log.Println("Инфо. Запрашиваемого плэйлиста нет в БД: " + err.Error())
+			http.Error(w, "С полученным ID в БД не существует записи", http.StatusBadRequest)
+			return
+		}
+
+		log.Println("Ошибка. При поиске записи в БД: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	buf := new(bytes.Buffer)
+
+	var sizeOfContent int64 = 0
+
+	w.Header().Add("Content-Disposition", "filename=\""+playList.Name+".zip"+"\"")
+	zipWriter := zip.NewWriter(buf)
+
+	for _, id := range playList.IDs {
+		var song SongInfo
+		err := songsColl.FindId(bson.ObjectIdHex(id)).One(&song)
+		if err != nil {
+			log.Println("Ошибка. При поиске записи в БД: " + err.Error())
+			continue
+		}
+
+		fileWriter, err := zipWriter.Create(song.FileName)
+		if err != nil {
+			log.Println("Ошибка. При создании нового файла в архиве ошибка: " + err.Error())
+			continue
+		}
+
+		data, err := ioutil.ReadFile(storageDirectory + id)
+		if err != nil {
+			log.Println("Ошибка. При чтении файла c id = " + id + " ошибка: " + err.Error())
+			continue
+		}
+		n, err := fileWriter.Write(data)
+		if err != nil {
+			log.Println("Ошибка. При записи в файл архива: " + err.Error())
+			continue
+		}
+		sizeOfContent += int64(n)
+	}
+	err = zipWriter.Close()
+	if err != nil {
+		log.Println("Ошибка. При закрытии архива: " + err.Error())
+	}
+
+	w.Header().Add("Content-Length", fmt.Sprintf("%v", sizeOfContent))
+	w.Write(buf.Bytes())
+	log.Println("Инфо. Закончилось успешно выполнение запроса на отдачу плэйлистов в zip")
 }

@@ -23,15 +23,17 @@ func main() {
 	}
 
 	http.HandleFunc("/addSong", addSong)
-	http.HandleFunc("/addPlayList", addPlayList)
+	http.HandleFunc("/addPlaylist", addPlaylist)
 	http.HandleFunc("/getSong", getSong)
 	http.HandleFunc("/getPlaylists", getPlaylists)
+	http.HandleFunc("/getPlaylistInZip", getPlaylistInZip)
 	http.HandleFunc("/getMetadataOfNewSongs", getMetadataOfNewSongs)
 	http.HandleFunc("/getMetadataOfPopularSongs", getMetadataOfPopularSongs)
 	http.HandleFunc("/searchSongs", searchSongs)
 	http.HandleFunc("/searchPlaylists", searchPlaylists)
 	http.HandleFunc("/addSongForm", addSongForm)
 	http.HandleFunc("/getSongForm", getSongForm)
+	http.HandleFunc("/addPlaylistForm", addPlaylistForm)
 	http.HandleFunc("/getPopularSongsForm", getPopularSongsForm)
 
 	err := server.ListenAndServe()
