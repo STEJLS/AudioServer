@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/STEJLS/AudioServer/flac"
 	"github.com/STEJLS/AudioServer/mp3"
 	"gopkg.in/mgo.v2/bson"
 )
@@ -41,13 +42,10 @@ func addSong(w http.ResponseWriter, r *http.Request) {
 
 	switch extension {
 	case ".mp3":
-		metaData = mp3.ParseTags(fd)
+		metaData = mp3.ParseMetadata(fd)
 		break
 	case ".flac":
-		// tag := flac.ParseTags(fd)
-		break
-	case ".ogg":
-		// tag := ogg.ParseTags(fd)
+		metaData = flac.ParseMetadata(fd)
 		break
 	}
 
@@ -79,7 +77,7 @@ func addSong(w http.ResponseWriter, r *http.Request) {
 	}
 
 	infoToDB := NewSongInfo(id, fh.Filename, int(fh.Size), metaData)
-	
+
 	if infoToDB.Artist == "" && infoToDB.Title == "" {
 		tryParseTitleAndArtistFromFileName(infoToDB, extension)
 	}
@@ -248,10 +246,6 @@ func searchSongs(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Ошибка. При поиске в БД: " + err.Error())
 		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
-		return
-	}
-
-	if len(result) == 0 {
 		return
 	}
 

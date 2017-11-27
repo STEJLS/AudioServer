@@ -47,19 +47,14 @@ func (mp3meta MP3meta) GetDuration() int {
 	return mp3meta.Duration
 }
 
-// func (t MP3meta) String() string {
-// 	return fmt.Sprintf("title:&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp'%v' <br>artist: &nbsp&nbsp&nbsp&nbsp&nbsp  '%v' <br>genre:&nbsp&nbsp&nbsp&nbsp&nbsp  '%v' <br>Bitrate: &nbsp&nbsp  '%v kbit/s' <br>Duration:  '%v:%v'",
-// 		t.Title, t.Artist, t.Genre, t.Bitrate, t.Duration/60, t.Duration%60)
-// }
-
 func (t MP3meta) String() string {
 	return fmt.Sprintf("title: '%v' \nartist: '%v' \ngenre:  '%v' \nBitrate:  '%v kbit/s' \nDuration:  '%v:%v'",
 		t.Title, t.Artist, t.Genre, t.Bitrate, t.Duration/60, t.Duration%60)
 }
 
-//Компановка основной информации о мп3 файле.
+//ParseMetadata парсит основную информацию о мп3 файле.
 //Возвращает nil если это не mp3 файл.
-func ParseTags(readSeeker io.ReadSeeker) *MP3meta {
+func ParseMetadata(readSeeker io.ReadSeeker) *MP3meta {
 	var file *MP3meta = new(MP3meta)
 
 	//Работаем с ID3v1
