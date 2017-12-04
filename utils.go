@@ -1,6 +1,9 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -53,18 +56,18 @@ func connectToDB(host string, port int, DBName string) {
 func saveFile(readSeeker io.ReadSeeker, newFileName string) error {
 	_, err := readSeeker.Seek(0, os.SEEK_SET)
 	if err != nil {
-		log.Println("Ошибка. Не удалось перейти на начало копируемого файла: " + err.Error())
+		log.Println("Ошибка. Выход из запроса: не удалось перейти на начало копируемого файла: " + err.Error())
 		return err
 	}
 	data, err := ioutil.ReadAll(readSeeker)
 	if err != nil {
-		log.Println("Ошибка. Не удалось прочитать файл пользователя: " + err.Error())
+		log.Println("Ошибка. Выход из запроса: не удалось прочитать файл пользователя: " + err.Error())
 		return err
 	}
 
 	err = ioutil.WriteFile(newFileName, data, 0666)
 	if err != nil {
-		log.Println("Ошибка. Не удалось создать новый файл: " + err.Error())
+		log.Println("Ошибка. Выход из запроса: не удалось создать новый файл: " + err.Error())
 		return err
 	}
 
@@ -82,16 +85,17 @@ func removeFile(fileName string) {
 
 // CheckExistMetaInDB - проверяет на существование в БД переданных метаданных
 // если такие данные есть, то возвращает true , инача false
-func CheckExistMetaInDB(mataData IMetadata) (bool, error) {
-	n, err := songsColl.Find(bson.M{"Title": mataData.GetTitle(),
-		"Artist":   mataData.GetArtist(),
-		"Genre":    mataData.GetGenre(),
-		"Bitrate":  mataData.GetBitrate(),
-		"Duration": mataData.GetDuration(),
+func CheckExistMetaInDB(mataData *SongInfo) (bool, error) {
+	n, err := songsColl.Find(bson.M{"Title": mataData.Title,
+		"Artist":   mataData.Artist,
+		"Genre":    mataData.Genre,
+		"Bitrate":  mataData.Bitrate,
+		"Duration": mataData.Duration,
+		"Size":     mataData.Size,
 	}).Count()
 
 	if err != nil {
-		log.Println("Ошибка. При поиске записи в БД: " + err.Error())
+		log.Println("Ошибка.Выход из запроса: при поиске записи в БД: " + err.Error())
 		return false, err
 	}
 
@@ -125,6 +129,19 @@ func getCountOfMetadata(r *http.Request) int {
 	return count
 }
 
+// NormalizeMetadata - проверяет пустые ли поля исполнитель и название
+// и в таком случае пытает их вычислить.
+// Проверяет пустое ли поле жанр, если да - ставит заглушку
+func NormalizeMetadata(infoToDB *SongInfo, ext string) {
+	if infoToDB.Artist == "" && infoToDB.Title == "" {
+		tryParseTitleAndArtistFromFileName(infoToDB, ext)
+	}
+
+	if infoToDB.Genre == "" {
+		infoToDB.Genre = "Other"
+	}
+}
+
 // tryParseTitleAndArtistFromFileName - пытается из имени файла получить исполнителя
 // и название песни. Разделение идет по символу"-"
 func tryParseTitleAndArtistFromFileName(song *SongInfo, ext string) {
@@ -136,4 +153,113 @@ func tryParseTitleAndArtistFromFileName(song *SongInfo, ext string) {
 	} else {
 		song.Title = fileNameWithoutExt
 	}
+}
+
+// serveSongsInZIP - принимает на вход массив bson.ObjectId песен, которые он архивирует в файл
+// с именем fileName и  пишет этот файл в ResponseWriter
+func serveSongsInZIP(ids []bson.ObjectId, fileName string, w http.ResponseWriter) {
+	var result []SongInfo
+
+	err := songsColl.Find(bson.M{"_id": bson.M{"$in": ids}}).All(&result)
+	if err != nil {
+		log.Println("Ошибка. При поиске песен в БД: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	var sizeOfContent int64 = 0
+	buf := new(bytes.Buffer)
+	zipWriter := zip.NewWriter(buf)
+
+	for _, song := range result {
+		data, err := ioutil.ReadFile(storageDirectory + song.ID.Hex())
+		if err != nil {
+			log.Printf("Ошибка. При чтении файла c диска id = %v ошибка: %v", song.ID.Hex(), err.Error())
+			continue
+		}
+
+		fileWriter, err := zipWriter.Create(song.FileName)
+		if err != nil {
+			log.Println("Ошибка. При создании нового файла в архиве ошибка: " + err.Error())
+			continue
+		}
+
+		n, err := fileWriter.Write(data)
+		if err != nil {
+			log.Println("Ошибка. При записи в файл архива: " + err.Error())
+			continue
+		}
+		sizeOfContent += int64(n)
+	}
+	err = zipWriter.Close()
+	if err != nil {
+		log.Println("Ошибка. При закрытии архива: " + err.Error())
+	}
+
+	w.Header().Add("Content-Disposition", "filename=\""+fileName+".zip\"")
+	w.Header().Add("Content-type", "application/zip")
+	w.Header().Add("Content-Length", fmt.Sprintf("%v", sizeOfContent))
+
+	_, err = w.Write(buf.Bytes())
+	if err != nil {
+		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+	log.Println("Инфо. Песни в формате zip успешно отправлены")
+
+	_, err = songsColl.UpdateAll(bson.M{"_id": bson.M{"$in": ids}}, bson.M{"$inc": bson.M{"CountOfDownload": 1}})
+	if err != nil {
+		log.Println("Ошибка. При инкременте поля CountOfDownload: " + err.Error())
+	} else {
+		log.Println("Инфо. Успешно увеличино кол-во загрузок для скачиваемых песен")
+	}
+}
+
+// jsonIDsToSliceObjectIDs - принимает на вход строку, в которой записан массив строк в формате json,
+// делает анмаршаллинг json'а и проверяет каждую строку,
+// является ли она bson.ObjectId, и в случае успешнйо проверки добавляет ее к возвращаемому массиву
+func jsonIDsToSliceObjectIDs(jsonIDs string) []bson.ObjectId {
+	var ids []string
+	err := json.Unmarshal([]byte(jsonIDs), &ids)
+	if err != nil {
+		log.Println("Ошибка. При анмаршалинге json: " + err.Error())
+		return nil
+	}
+
+	return makeSliceSliceObjectIDs(ids)
+}
+
+// makeSliceSliceObjectIDs - принимает на вход массив строк, проверяет каждую строку,
+// является ли она bson.ObjectId, и в случае успешнйо проверки добавляет ее к возвращаемому массиву.
+func makeSliceSliceObjectIDs(ids []string) []bson.ObjectId {
+	arr := make([]bson.ObjectId, 0, len(ids))
+	for _, id := range ids {
+		if bson.IsObjectIdHex(id) {
+			arr = append(arr, bson.ObjectIdHex(id))
+		}
+	}
+
+	return arr
+}
+
+//serveContent - принимает на вход данные, переводит их в формат json и пишет их в ResponseWriter
+func serveContent(inData interface{}, w http.ResponseWriter, r *http.Request) {
+	data, err := json.Marshal(inData)
+	if err != nil {
+		log.Println("Ошибка. При маршалинге в json результата: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add("Content-type", "application/json;")
+
+	_, err = w.Write(data)
+	if err != nil {
+		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+	}
+
+	log.Println("Инфо. Отдача метаданных успешно закончена")
 }
