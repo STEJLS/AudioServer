@@ -18,8 +18,9 @@ var songsColl *mgo.Collection
 var playListsColl *mgo.Collection
 
 const (
-	formFileName                  string = "file"      // имя файла в форме на сайте
-	storageDirectory              string = "../music/" // место для хранения песен
-	initialCountOfDownloads       int64  = 0           // начальное  количесвто скачиваний
-	defaultCountMatadataForUpload int    = 50          // кол-во по умолчанию сколько метаданных будет отдаваться
+	formFileName                  string = "file"       // имя файла в форме на сайте
+	storageDirectory              string = "../music/"  // место для хранения песен
+	initialCountOfDownloads       int64  = 0            // начальное  количесвто скачиваний
+	defaultCountMatadataForUpload int    = 50           // кол-во по умолчанию сколько метаданных будет отдаваться
+	serviceName                   string = "ALPAmusic_" // название сервиса
 )

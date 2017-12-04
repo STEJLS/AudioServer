@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/STEJLS/AudioServer/flac"
 	"github.com/STEJLS/AudioServer/mp3"
@@ -82,6 +83,10 @@ func addSong(w http.ResponseWriter, r *http.Request) {
 		tryParseTitleAndArtistFromFileName(infoToDB, extension)
 	}
 
+	if infoToDB.Genre == "" {
+		infoToDB.Genre = "Other"
+	}
+
 	err = songsColl.Insert(infoToDB)
 	if err != nil {
 		log.Println("Ошибка. При добавлении записи в БД: " + err.Error())
@@ -102,9 +107,11 @@ func addSong(w http.ResponseWriter, r *http.Request) {
 }
 
 // getSong - отдает песню по запрошенному ID
-// Возможные http статусы: 200, 400, 500
+// Возможные http статусы: 200, 400
 func getSong(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на отдачу файла")
+
+	download := r.FormValue("download")
 
 	id := r.FormValue("id")
 	if id == "" {
@@ -139,9 +146,11 @@ func getSong(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("Инфо. Закончилось выполнение запроса на отдачу файла")
 
-	err = songsColl.UpdateId(bson.ObjectIdHex(id), bson.M{"$set": bson.M{"CountOfDownload": result.CountOfDownload + 1}})
-	if err != nil {
-		log.Println("Ошибка. При обновлении записи(" + id + ") - увеличивалось кол-во скачаваний: " + err.Error())
+	if download == "true" {
+		err = songsColl.UpdateId(bson.ObjectIdHex(id), bson.M{"$set": bson.M{"CountOfDownload": result.CountOfDownload + 1}})
+		if err != nil {
+			log.Println("Ошибка. При обновлении записи(" + id + ") - увеличивалось кол-во скачаваний: " + err.Error())
+		}
 	}
 }
 
@@ -159,10 +168,6 @@ func getMetadataOfPopularSongs(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Ошибка. При поиске популярных песен в БД: " + err.Error())
 		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
-		return
-	}
-
-	if len(result) == 0 {
 		return
 	}
 
@@ -199,10 +204,6 @@ func getMetadataOfNewSongs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(result) == 0 {
-		return
-	}
-
 	data, err := json.Marshal(result)
 	if err != nil {
 		log.Println("Ошибка. При маршалинге в json новинок: " + err.Error())
@@ -230,12 +231,13 @@ func searchSongs(w http.ResponseWriter, r *http.Request) {
 
 	stringForSearch := r.FormValue("searchString")
 	if stringForSearch == "" {
-		log.Printf("Инфо. На поиск поcтупила некорректная строка")
-		http.Error(w, "Полученная строка не может использоваться для поиска", http.StatusBadRequest)
+		log.Printf("Инфо. На поиск поcтупила пустая строка")
+		data, _ := json.Marshal(nil)
+		w.Write(data)
 		return
 	}
 
-	stringForSearch = strings.Join(strings.Fields(regexp.QuoteMeta(stringForSearch)), " ")
+	stringForSearch = strings.Join(strings.Fields(regexp.QuoteMeta(stringForSearch)), "|")
 	log.Printf("Инфо. Поиск по строке: " + stringForSearch)
 
 	var result []SongInfo
@@ -287,7 +289,10 @@ func addPlaylist(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
 	}
 
+	id := bson.NewObjectId()
+
 	playList := PlayList{
+		ID:   id,
 		Name: name,
 		IDs:  ids,
 	}
@@ -297,6 +302,18 @@ func addPlaylist(w http.ResponseWriter, r *http.Request) {
 		log.Println("Ошибка. При добавлении записи в БД: " + err.Error())
 		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
 		return
+	}
+
+	data, err := json.Marshal(id)
+	if err != nil {
+		log.Println("Ошибка. При маршалинге в json: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+	}
+
+	_, err = w.Write(data)
+	if err != nil {
+		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
 	}
 
 	log.Println("Инфо. Закончилось успешно выполнение запроса на добавление плэйлиста")
@@ -316,10 +333,6 @@ func getPlaylists(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Ошибка. При поиске плэйлистов в БД: " + err.Error())
 		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
-		return
-	}
-
-	if len(result) == 0 {
 		return
 	}
 
@@ -350,8 +363,9 @@ func searchPlaylists(w http.ResponseWriter, r *http.Request) {
 
 	stringForSearch := r.FormValue("searchString")
 	if stringForSearch == "" {
-		log.Printf("Инфо. На поиск поcтупила некорректная строка")
-		http.Error(w, "Полученная строка не может использоваться для поиска", http.StatusBadRequest)
+		log.Printf("Инфо. На поиск поcтупила пустая строка")
+		data, _ := json.Marshal(nil)
+		w.Write(data)
 		return
 	}
 
@@ -364,10 +378,6 @@ func searchPlaylists(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Ошибка. При поиске в БД: " + err.Error())
 		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
-		return
-	}
-
-	if len(result) == 0 {
 		return
 	}
 
@@ -394,7 +404,7 @@ func getPlaylistInZip(w http.ResponseWriter, r *http.Request) {
 	id := r.FormValue("id")
 	if id == "" {
 		log.Printf(fmt.Sprintf("Инфо. На выход посутпил некорректный id(%v)", id))
-		http.Error(w, "Полученненный не ID, а пустая строка", http.StatusBadRequest)
+		http.Error(w, "Полученненно не ID, а пустая строка", http.StatusBadRequest)
 		return
 	}
 
@@ -438,6 +448,117 @@ func getPlaylistInZip(w http.ResponseWriter, r *http.Request) {
 			log.Println("Ошибка. При чтении файла c id = " + id + " ошибка: " + err.Error())
 			continue
 		}
+		n, err := fileWriter.Write(data)
+		if err != nil {
+			log.Println("Ошибка. При записи в файл архива: " + err.Error())
+			continue
+		}
+		sizeOfContent += int64(n)
+	}
+	err = zipWriter.Close()
+	if err != nil {
+		log.Println("Ошибка. При закрытии архива: " + err.Error())
+	}
+
+	w.Header().Add("Content-Length", fmt.Sprintf("%v", sizeOfContent))
+	w.Write(buf.Bytes())
+	log.Println("Инфо. Закончилось успешно выполнение запроса на отдачу плэйлистов в zip")
+}
+
+// getMetadataOfSongsbyIDs - считывает переменную ids из запроса, в которой должен быть массив id,
+// и возвращает массив метаданных об этих песнях.
+func getMetadataOfSongsbyIDs(w http.ResponseWriter, r *http.Request) {
+	log.Println("Инфо. Началось выполнение запроса на отдачу метаданные об массиве песен")
+
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add("Content-type", "application/json;")
+
+	idsString := r.FormValue("ids")
+	if idsString == "" {
+		log.Printf(fmt.Sprintf("Инфо. На выход посутпила пустая строка ids"))
+		http.Error(w, "Полученненно не IDs, а пустая строка", http.StatusBadRequest)
+		return
+	}
+
+	var ids []string
+	json.Unmarshal([]byte(idsString), &ids)
+
+	result := make([]SongInfo, 0, len(ids))
+	for i := 0; i < len(ids); i++ {
+		var metaData SongInfo
+		if bson.IsObjectIdHex(ids[i]) {
+			err := songsColl.FindId(bson.ObjectIdHex(ids[i])).One(&metaData)
+			if err != nil {
+				log.Println("Ошибка. При поиске записи в БД: " + err.Error())
+				continue
+			}
+			result = append(result, metaData)
+		}
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		log.Println("Ошибка. При маршалинге в json результата: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+		return
+	}
+
+	_, err = w.Write(data)
+	if err != nil {
+		log.Println("Ошибка. При отдачи метоинформации: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+	}
+
+	log.Println("Инфо. Закончилось успешно выполнение запроса на отдачу метаданные об массиве песен")
+}
+
+// getPlaylistInZip - создает zip архив, который содержит в себе указанные песни
+func getSongsInZip(w http.ResponseWriter, r *http.Request) {
+	log.Println("Инфо. Началось выполнение запроса на отдачу песен в zip")
+
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	//w.Header().Add("Content-type", "application/json;")
+
+	jsonIDs := r.FormValue("ids")
+	if jsonIDs == "" {
+		log.Printf(fmt.Sprintf("Инфо. На выход посутпил пустой ids"))
+		http.Error(w, "Полученненно не IDs, а пустая строка", http.StatusBadRequest)
+		return
+	}
+
+	var ids []string
+	err := json.Unmarshal([]byte(jsonIDs), &ids)
+	if err != nil {
+		log.Println("Ошибка. При анмаршалинге json: " + err.Error())
+		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
+	}
+
+	buf := new(bytes.Buffer)
+
+	var sizeOfContent int64 = 0
+	w.Header().Add("Content-Disposition", "filename=\""+serviceName+time.Now().Format("15:04:05.000")+".zip"+"\"")
+	zipWriter := zip.NewWriter(buf)
+
+	for _, id := range ids {
+		data, err := ioutil.ReadFile(storageDirectory + id)
+		if err != nil {
+			log.Println("Ошибка. При чтении файла c id = " + id + " ошибка: " + err.Error())
+			continue
+		}
+
+		var song SongInfo
+		err = songsColl.FindId(bson.ObjectIdHex(id)).One(&song)
+		if err != nil {
+			log.Println("Ошибка. При поиске записи в БД: " + err.Error())
+			continue
+		}
+
+		fileWriter, err := zipWriter.Create(song.FileName)
+		if err != nil {
+			log.Println("Ошибка. При создании нового файла в архиве ошибка: " + err.Error())
+			continue
+		}
+
 		n, err := fileWriter.Write(data)
 		if err != nil {
 			log.Println("Ошибка. При записи в файл архива: " + err.Error())

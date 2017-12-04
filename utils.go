@@ -133,5 +133,7 @@ func tryParseTitleAndArtistFromFileName(song *SongInfo, ext string) {
 	if n != -1 {
 		song.Artist = strings.TrimSpace(fileNameWithoutExt[0:n])
 		song.Title = strings.TrimSpace(fileNameWithoutExt[n+1 : len(fileNameWithoutExt)])
+	} else {
+		song.Title = fileNameWithoutExt
 	}
 }
