@@ -87,3 +87,20 @@ func searchPlaylistsForm(w http.ResponseWriter, r *http.Request) {
 		</html>`),
 	)
 }
+
+func getSongsInZipForm(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte(`<html>
+		<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+		<title>AudioServer</title>
+		</head>
+		<body>
+		<form action="/getSongsInZip" 
+		method="post" enctype="application/x-www-form-urlencoded">
+		<input type="text" name="ids">
+		<input type="submit"/>
+		</form>
+		</body>
+		</html>`),
+	)
+}

@@ -38,6 +38,7 @@ func main() {
 	http.HandleFunc("/addPlaylistForm", addPlaylistForm)
 	http.HandleFunc("/getPopularSongsForm", getPopularSongsForm)
 	http.HandleFunc("/searchPlaylistsForm", searchPlaylistsForm)
+	http.HandleFunc("/getSongsInZipForm", getSongsInZipForm)
 
 	err := server.ListenAndServe()
 	if err != nil {

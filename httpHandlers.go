@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -15,18 +16,18 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
-// addSong - добавляет метаданные о песни в базу данных, копирует файл на диск в директорию,
-// путь до которой хранится в переменной storageDirectory (имя песни - id записи из БД)
-// Файл извлекается из тела POST запроса с именем, хранящимся в переменной formFileName.
-// Если файл добавлен ответ - "Файл успешно добавлен" - 200
-// Если не получилось извлечь файл из формы ответ - "Файл не найден" - 400
-// Если добавляемый файл уже есть в системе - "Загружаемый файл уже есть в системе" - 400
-// Если тип файла не поддерижвается ответ - "Данный формат не поддерживается" - 415
-// Если произошла внутренняя ошибка сервера - "Неполадки на сервере, повторите попытку позже" - 500
+// addSong - добавляет новую песню в систему. Парсит метаданные о песне,
+// заносит их в базу данных и сохраняет на диск (имя под которым хранится
+//песня на диске – это id ее записи из базы данных).
 func addSong(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на добавлене файла")
 
 	w.Header().Add("Access-Control-Allow-Origin", "*")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
 	w.Header().Add("Content-type", "text/html;charset=utf-8")
 	fd, fh, err := r.FormFile(formFileName)
 	if err != nil {
@@ -39,7 +40,7 @@ func addSong(w http.ResponseWriter, r *http.Request) {
 	extension := filepath.Ext(fh.Filename)
 	var metaData IMetadata
 
-	switch extension {
+	switch strings.ToLower(extension) {
 	case ".mp3":
 		metaData = mp3.ParseMetadata(fd)
 		break
@@ -48,7 +49,8 @@ func addSong(w http.ResponseWriter, r *http.Request) {
 		break
 	}
 
-	if metaData == nil {
+	if reflect.ValueOf(metaData).IsNil() {
+		// if metaData == nil {
 		log.Println("Инфо. Выход из запроса: данный формат не поддерживается: " + extension)
 		http.Error(w, "Данный формат не поддерживается", http.StatusUnsupportedMediaType)
 		return
@@ -91,15 +93,10 @@ func addSong(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Закончилось выполнение запроса на добавлене файла")
 }
 
-// addPlayList - добавляет плэйлист в систему
-// Назавние плейлиста извлекается из переменной запросы 'name' - это строка .
-// Список id песен плейлиста извлекается из переменной запросы 'ids' - это массив строк в формате json.
-// Если если вместо ids или name пустая строка  - "Обнаружены незаполненные поля" - 400.
-// Если произошла ошибка при анмаршалинге ids  - "Получены некорректные ID" - 400.
-// Если произошла внутренняя ошибка сервера - "Неполадки на сервере, повторите попытку позже" - 500.
+// addPlayList - добавляет новый плэйлист в систему.
 func addPlaylist(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на добавление плэйлиста")
-
+	w.Header().Add("Access-Control-Allow-Origin", "*")
 	jsonIDs := r.FormValue("ids")
 	name := r.FormValue("name")
 	if jsonIDs == "" || name == "" {
@@ -131,13 +128,10 @@ func addPlaylist(w http.ResponseWriter, r *http.Request) {
 	serveContent(playList.ID, w, r)
 }
 
-// getMetadataOfPopularSongs - считывает переменную count из запроса
-// и возвращает count методанных о популярных песнях в формате json.
-// Если count не указан или некорректный, то используется значение по умолчанию.
-// Если произошла внутренняя ошибка сервера - "Неполадки на сервере, повторите попытку позже" - 500.
+// getMetadataOfPopularSongs - отдает информацию о популярных песнях.
 func getMetadataOfPopularSongs(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на отдачу популярных песен")
-
+	w.Header().Add("Access-Control-Allow-Origin", "*")
 	count := getCountOfMetadata(r)
 
 	var result []SongInfo
@@ -151,13 +145,10 @@ func getMetadataOfPopularSongs(w http.ResponseWriter, r *http.Request) {
 	serveContent(result, w, r)
 }
 
-// getMetadataOfNewSongs - считывает переменную count из запроса
-// и возвращает count методанных о новых песнях в формате json.
-// Если count не указан или некорректный, то используется значение по умолчанию.
-// Если произошла внутренняя ошибка сервера - "Неполадки на сервере, повторите попытку позже" - 500.
+// getMetadataOfNewSongs - отдает информацию о новых песнях.
 func getMetadataOfNewSongs(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на отдачу новинок")
-
+	w.Header().Add("Access-Control-Allow-Origin", "*")
 	count := getCountOfMetadata(r)
 
 	var result []SongInfo
@@ -171,14 +162,10 @@ func getMetadataOfNewSongs(w http.ResponseWriter, r *http.Request) {
 	serveContent(result, w, r)
 }
 
-// getMetadataOfSongsbyIDs - считывает переменную ids из запроса, в которой должен быть массив id в формате json,
-// и возвращает массив метаданных об этих песнях.
-// Если если вместо ids пустая строка  - "Полученненно не IDs, а пустая строка" - 400.
-// Если получен некорретные id  - "Получены некорректные ID" - 400.
-// Если произошла внутренняя ошибка сервера - "Неполадки на сервере, повторите попытку позже" - 500.
+// getMetadataOfSongsbyIDs - отдает информацию об указанных в теле запроса песнях.
 func getMetadataOfSongsbyIDs(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на отдачу метаданные об массиве песен")
-
+	w.Header().Add("Access-Control-Allow-Origin", "*")
 	jsonIDs := r.FormValue("ids")
 	if jsonIDs == "" {
 		log.Printf(fmt.Sprintf("Инфо. На выход посутпила пустая строка ids"))
@@ -189,6 +176,7 @@ func getMetadataOfSongsbyIDs(w http.ResponseWriter, r *http.Request) {
 	ids := jsonIDsToSliceObjectIDs(jsonIDs)
 	if ids == nil || len(ids) == 0 {
 		http.Error(w, "Получены некорректные ID", http.StatusBadRequest)
+		return
 	}
 
 	var result []SongInfo
@@ -203,16 +191,14 @@ func getMetadataOfSongsbyIDs(w http.ResponseWriter, r *http.Request) {
 	serveContent(result, w, r)
 }
 
-// getPlaylists - считывает переменную count из запроса и возвращает count методанных о плэйлистах в формате json.
-// Если count не указан или некорректный, то используется значение по умолчанию.
-// Если произошла внутренняя ошибка сервера - "Неполадки на сервере, повторите попытку позже" - 500.
+// getPlaylists - отдает информацию о новых плейлистах.
 func getPlaylists(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на отдачу плэйлистов")
-
+	w.Header().Add("Access-Control-Allow-Origin", "*")
 	count := getCountOfMetadata(r)
 
 	var result []PlayList
-	err := playListsColl.Find(nil).Limit(count).All(&result)
+	err := playListsColl.Find(nil).Sort("-_id").Limit(count).All(&result)
 	if err != nil {
 		log.Println("Ошибка. При поиске плэйлистов в БД: " + err.Error())
 		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
@@ -222,14 +208,11 @@ func getPlaylists(w http.ResponseWriter, r *http.Request) {
 	serveContent(result, w, r)
 }
 
-// searchSongs - считывает переменную searchString из запроса,
-// осуществляет поиск песен в базе данных по этой строке и возвращает метаданные о песнях в формате json
-// Если если вместо searchString пустая строка  - "null" - 200.
-// Если по введенной строке ничего не найдено - "null" - 200.
-// Если произошла внутренняя ошибка сервера - "Неполадки на сервере, повторите попытку позже" - 500.
+// searchSongs - осуществляет поиск песен в базе данных по полученной
+// из тела запроса строке и возвращает информацию о найденных песнях.
 func searchSongs(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на поиск песен")
-
+	w.Header().Add("Access-Control-Allow-Origin", "*")
 	stringForSearch := r.FormValue("searchString")
 	if stringForSearch == "" {
 		log.Printf("Инфо. На поиск поcтупила пустая строка")
@@ -238,31 +221,34 @@ func searchSongs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stringForSearch = strings.Join(strings.Fields(regexp.QuoteMeta(stringForSearch)), "|")
-	log.Printf("Инфо. Поиск по строке: " + stringForSearch)
+	stringForSearchInDB := strings.Join(strings.Fields(regexp.QuoteMeta(stringForSearch)), "|")
+	log.Printf("Инфо. Поиск по строке: " + stringForSearchInDB)
 
 	var result []SongInfo
 
-	err := songsColl.Find(bson.M{"$or": []bson.M{bson.M{"Artist": bson.RegEx{Pattern: stringForSearch, Options: "i"}},
-		bson.M{"Genre": bson.RegEx{Pattern: stringForSearch, Options: "i"}},
-		bson.M{"Title": bson.RegEx{Pattern: stringForSearch, Options: "i"}}}}).All(&result)
+	err := songsColl.Find(bson.M{"$or": []bson.M{bson.M{"Artist": bson.RegEx{Pattern: stringForSearchInDB, Options: "i"}},
+		bson.M{"Genre": bson.RegEx{Pattern: stringForSearchInDB, Options: "i"}},
+		bson.M{"Title": bson.RegEx{Pattern: stringForSearchInDB, Options: "i"}}}}).All(&result)
 	if err != nil {
 		log.Println("Ошибка. При поиске в БД: " + err.Error())
 		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
 		return
 	}
 
+	words := strings.Fields(stringForSearch)
+
+	if len(words) != 1 {
+		result = *advancedSearch(words, &result)
+	}
+
 	serveContent(result, w, r)
 }
 
-// searchPlaylists - считывает переменную searchString из запроса,
-// осуществляет поиск плэйлистов в базе данных по этой строке и возвращает метаданные о плейлисте в формате json
-// Если если вместо searchString пустая строка  - "null" - 200.
-// Если по введенной строке ничего не найдено - "null" - 200.
-// Если произошла внутренняя ошибка сервера - "Неполадки на сервере, повторите попытку позже" - 500.
+// searchPlaylists - Осуществляет поиск плейлистов в базе данных по
+// полученной из тела запроса строке и возвращает информацию о найденных плелистах.
 func searchPlaylists(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на поиск плейлистов")
-
+	w.Header().Add("Access-Control-Allow-Origin", "*")
 	stringForSearch := r.FormValue("searchString")
 	if stringForSearch == "" {
 		log.Printf("Инфо. На поиск поcтупила пустая строка")
@@ -271,7 +257,7 @@ func searchPlaylists(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stringForSearch = strings.Join(strings.Fields(regexp.QuoteMeta(stringForSearch)), " ")
+	stringForSearch = strings.Join(strings.Fields(regexp.QuoteMeta(stringForSearch)), ".*")
 	log.Printf("Инфо. Поиск по строке: " + stringForSearch)
 
 	var result []PlayList
@@ -286,27 +272,24 @@ func searchPlaylists(w http.ResponseWriter, r *http.Request) {
 	serveContent(result, w, r)
 }
 
-// getSong - отдает на скачивание песню по запрошенному ID.
-// ID извлекается переменной 'id' из тела запроса.
-// Если если вместо id пустая строка  - "ID не найден" - 400.
-// Если получен некорретные id  - "Полученное значение не является ID" - 400.
-// Если получен некорретные id, но песни с таким id нет  - "С полученным ID в БД не существует записи" - 400.
-// Если произошла внутренняя ошибка сервера - "Неполадки на сервере, повторите попытку позже" - 500.
+// getSong - Отдает на скачивание песню по запрошенному id.
+// Используется так же для прослушивания песни на сайте.
+// Прослушивание не считается за скачивание.
 func getSong(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на отдачу файла")
-
+	w.Header().Add("Access-Control-Allow-Origin", "*")
 	download := r.FormValue("isDownload")
 
 	id := r.FormValue("id")
 	if id == "" {
-		log.Println("Ошибка. ID не найден")
-		http.Error(w, "ID не найден", http.StatusBadRequest)
+		log.Println("Ошибка. id не найден")
+		http.Error(w, "id не найден", http.StatusBadRequest)
 		return
 	}
 
 	if !bson.IsObjectIdHex(id) {
 		log.Printf("Ошибка. Полученное значение не является ID(id = %q) ", id)
-		http.Error(w, "Полученное значение не является ID", http.StatusBadRequest)
+		http.Error(w, "Получен некорректный ID", http.StatusBadRequest)
 		return
 	}
 
@@ -316,7 +299,7 @@ func getSong(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if err.Error() == "not found" {
 			log.Println("Инфо. Запрашиваемой песни нет в БД: " + err.Error())
-			http.Error(w, "С полученным ID в БД не существует записи", http.StatusBadRequest)
+			http.Error(w, "Такой песни нет", http.StatusBadRequest)
 			return
 		}
 
@@ -338,25 +321,21 @@ func getSong(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// getSongsInZip - на вход принимает массив ID песен в формате json,
-// который находится в переменной запроса с именем 'ids'.
-// Отдает на скачивание указанные песни в архиве zip.
-// Если если вместо ids пустая строка  - "Полученненно не IDs, а пустая строка" - 400.
-// Если получен некорретные id  - "Получены некорректные ID" - 400.
-// Если произошла внутренняя ошибка сервера - "Неполадки на сервере, повторите попытку позже" - 500.
+// getSongsInZip - отдает на скачивание указанные в теле запроса песни, упакованные в zip архив.
 func getSongsInZip(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на отдачу песен в zip")
-
+	w.Header().Add("Access-Control-Allow-Origin", "*")
 	jsonIDs := r.FormValue("ids")
 	if jsonIDs == "" {
 		log.Printf(fmt.Sprintf("Инфо. На выход посутпил пустой ids"))
-		http.Error(w, "Полученненно не IDs, а пустая строка", http.StatusBadRequest)
+		http.Error(w, "Получено не IDs, а пустая строка", http.StatusBadRequest)
 		return
 	}
 
 	ids := jsonIDsToSliceObjectIDs(jsonIDs)
 	if ids == nil || len(ids) == 0 {
 		http.Error(w, "Получены некорректные ID", http.StatusBadRequest)
+		return
 	}
 
 	serveSongsInZIP(ids, serviceName+time.Now().Format("15:04:05.000")+".zip", w)
@@ -364,18 +343,22 @@ func getSongsInZip(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Закончилось успешно выполнение запроса на отдачу плэйлистов в zip")
 }
 
-// getPlaylistInZip - на вход принимает ID плейлиста, который находится в переменной запроса с именем 'id'.
-// Отдает на скачивание песни указанного плейлиста в архиве zip.
-// Если получен некорретный id  - "Полученненн неверный ID" - 400.
-// Если указанного id нет в БД - "С полученным ID в БД не существует записи" - 400.
-// Если произошла внутренняя ошибка сервера - "Неполадки на сервере, повторите попытку позже" - 500.
+// getPlaylistInZip - отдает на скачивание песни указанного плейлиста,
+// упакованные в zip архив.
 func getPlaylistInZip(w http.ResponseWriter, r *http.Request) {
 	log.Println("Инфо. Началось выполнение запроса на отдачу плэйлистов в zip")
-
+	w.Header().Add("Access-Control-Allow-Origin", "*")
 	id := r.FormValue("id")
-	if id == "" || !bson.IsObjectIdHex(id) {
+
+	if id == "" {
+		log.Printf("Инфо. Получен не ID, а пустая строка")
+		http.Error(w, "Получен не ID, а пустая строка", http.StatusBadRequest)
+		return
+	}
+
+	if !bson.IsObjectIdHex(id) {
 		log.Printf(fmt.Sprintf("Инфо. На выход посутпил некорректный id(%v)", id))
-		http.Error(w, "Полученненн неверный ID", http.StatusBadRequest)
+		http.Error(w, "Получен некорректный ID", http.StatusBadRequest)
 		return
 	}
 
@@ -384,7 +367,7 @@ func getPlaylistInZip(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if err.Error() == "not found" {
 			log.Println("Инфо. Запрашиваемого плэйлиста нет в БД: " + err.Error())
-			http.Error(w, "С полученным ID в БД не существует записи", http.StatusBadRequest)
+			http.Error(w, "С полученным ID в БД записи не существует", http.StatusBadRequest)
 			return
 		}
 

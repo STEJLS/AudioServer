@@ -109,21 +109,21 @@ func CheckExistMetaInDB(mataData *SongInfo) (bool, error) {
 // getCountOfMetadata - пытается извлечь переменную с именем count и возвращает его если оно корректно,
 // в противном случае возвращается значение по умолчанию
 func getCountOfMetadata(r *http.Request) int {
-	var count int
-
 	strCount := r.FormValue("count")
 
 	if strCount == "" {
 		log.Printf("Инфо. Количетсво запрашиваемых записей не указано, отдаю стандартное кол-во: %v", defaultCountMatadataForUpload)
-		count = defaultCountMatadataForUpload
-	} else {
-		var err error
-		count, err = strconv.Atoi(strCount)
+		return defaultCountMatadataForUpload
+	}
 
-		if err != nil {
-			log.Println("Ошибка. Не получилось преобрахзовать введенное кол-во в число: " + err.Error())
-			count = defaultCountMatadataForUpload
-		}
+	count, err := strconv.Atoi(strCount)
+	if err != nil {
+		log.Println("Ошибка. Не получилось преобрахзовать введенное кол-во в число: " + err.Error())
+		return defaultCountMatadataForUpload
+	}
+
+	if count < 0 {
+		return defaultCountMatadataForUpload
 	}
 
 	return count
@@ -155,8 +155,7 @@ func tryParseTitleAndArtistFromFileName(song *SongInfo, ext string) {
 	}
 }
 
-// serveSongsInZIP - принимает на вход массив bson.ObjectId песен, которые он архивирует в файл
-// с именем fileName и  пишет этот файл в ResponseWriter
+// serveSongsInZIP - отдает на скачивание песни, упакованные в zip архив.
 func serveSongsInZIP(ids []bson.ObjectId, fileName string, w http.ResponseWriter) {
 	var result []SongInfo
 
@@ -167,7 +166,12 @@ func serveSongsInZIP(ids []bson.ObjectId, fileName string, w http.ResponseWriter
 		return
 	}
 
-	var sizeOfContent int64 = 0
+	if len(result) == 0 {
+		log.Println("Ошибка. Ни одна песня из полученного массива id не найдена в бд: " + err.Error())
+		http.Error(w, "Указанные песни не найдены", http.StatusBadRequest)
+		return
+	}
+
 	buf := new(bytes.Buffer)
 	zipWriter := zip.NewWriter(buf)
 
@@ -184,21 +188,20 @@ func serveSongsInZIP(ids []bson.ObjectId, fileName string, w http.ResponseWriter
 			continue
 		}
 
-		n, err := fileWriter.Write(data)
+		_, err = fileWriter.Write(data)
 		if err != nil {
 			log.Println("Ошибка. При записи в файл архива: " + err.Error())
 			continue
 		}
-		sizeOfContent += int64(n)
 	}
 	err = zipWriter.Close()
 	if err != nil {
 		log.Println("Ошибка. При закрытии архива: " + err.Error())
 	}
 
-	w.Header().Add("Content-Disposition", "filename=\""+fileName+".zip\"")
+	w.Header().Add("Content-Disposition", "filename=\""+fileName+"\"")
 	w.Header().Add("Content-type", "application/zip")
-	w.Header().Add("Content-Length", fmt.Sprintf("%v", sizeOfContent))
+	w.Header().Add("Content-Length", fmt.Sprintf("%v", buf.Len()))
 
 	_, err = w.Write(buf.Bytes())
 	if err != nil {
@@ -252,7 +255,6 @@ func serveContent(inData interface{}, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Add("Access-Control-Allow-Origin", "*")
 	w.Header().Add("Content-type", "application/json;")
 
 	_, err = w.Write(data)
@@ -262,4 +264,31 @@ func serveContent(inData interface{}, w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Println("Инфо. Отдача метаданных успешно закончена")
+}
+
+// advancedSearch - примает на вход массив слов, по которому будет осуществляться
+// углубленный поиск и массив метаинформации, уже найденной в бд.
+// Возвращает массив метаинформации, в котором в каждой записи есть каждое слово из входного массива слов.
+func advancedSearch(words []string, result *[]SongInfo) *[]SongInfo {
+	checkedResult := make([]SongInfo, 0, len(*result))
+
+	for _, item := range *result {
+		flag := true
+		sample := strings.ToLower(item.Artist + item.Title + item.Genre)
+
+		for _, item := range words {
+			lowerItem := strings.ToLower(item)
+			if !strings.Contains(sample, lowerItem) {
+				flag = false
+				break
+			}
+		}
+
+		if flag {
+			checkedResult = append(checkedResult, item)
+		}
+
+	}
+
+	return &checkedResult
 }
