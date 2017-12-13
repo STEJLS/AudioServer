@@ -256,8 +256,8 @@ func searchPlaylists(w http.ResponseWriter, r *http.Request) {
 		w.Write(data)
 		return
 	}
-
-	stringForSearch = strings.Join(strings.Fields(regexp.QuoteMeta(stringForSearch)), ".*")
+	words := strings.Fields(regexp.QuoteMeta(stringForSearch))
+	stringForSearch = strings.Join(words, "|")
 	log.Printf("Инфо. Поиск по строке: " + stringForSearch)
 
 	var result []PlayList
@@ -267,6 +267,10 @@ func searchPlaylists(w http.ResponseWriter, r *http.Request) {
 		log.Println("Ошибка. При поиске в БД: " + err.Error())
 		http.Error(w, "Неполадки на сервере, повторите попытку позже", http.StatusInternalServerError)
 		return
+	}
+
+	if len(words) != 1 {
+		result = *advancedSearchPlaylists(words, &result)
 	}
 
 	serveContent(result, w, r)

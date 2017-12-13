@@ -19,7 +19,7 @@ func main() {
 	defer audioDBsession.Close()
 
 	server := http.Server{
-		Addr: fmt.Sprintf(":%v", config.HTTP.Port),
+		Addr: fmt.Sprintf("%v:%v", config.HTTP.Host, config.HTTP.Port),
 	}
 
 	http.HandleFunc("/addSong", addSong)

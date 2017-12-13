@@ -292,3 +292,27 @@ func advancedSearch(words []string, result *[]SongInfo) *[]SongInfo {
 
 	return &checkedResult
 }
+
+func advancedSearchPlaylists(words []string, result *[]PlayList) *[]PlayList {
+	checkedResult := make([]PlayList, 0, len(*result))
+
+	for _, item := range *result {
+		flag := true
+		sample := strings.ToLower(item.Name)
+
+		for _, item := range words {
+			lowerItem := strings.ToLower(item)
+			if !strings.Contains(sample, lowerItem) {
+				flag = false
+				break
+			}
+		}
+
+		if flag {
+			checkedResult = append(checkedResult, item)
+		}
+
+	}
+
+	return &checkedResult
+}
